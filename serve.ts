@@ -1,6 +1,8 @@
-// A tiny static server for game/ (Node 22, standard library only), so SOLMAR can
-// be played locally without a build step: `node serve.ts` serves game/ on
-// http://localhost:8080. Development convenience only, not a public web server.
+// A tiny static server for game/ (Node 22, standard library only), so the
+// entry can be played locally without a build step: `node serve.ts` serves
+// game/ on http://localhost:8080 (or --port <n>). It sends the MIME types a
+// browser game needs and refuses any path outside game/. A development
+// convenience, not a web server for the internet.
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
@@ -21,6 +23,12 @@ const MIME = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
+  '.txt': 'text/plain; charset=utf-8',
 };
 
 createServer((request, response) => {
@@ -54,5 +62,5 @@ createServer((request, response) => {
   });
   createReadStream(file).pipe(response);
 }).listen(port, '127.0.0.1', () => {
-  console.log(`SOLMAR is on http://localhost:${port}`);
+  console.log(`game/ is on http://localhost:${port}`);
 });

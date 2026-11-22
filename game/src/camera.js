@@ -1,81 +1,65 @@
-// camera.js: the third-person camera — it follows behind the player or the car,
-// the mouse orbits it (pointer lock), and it swings back behind the car on its own
-// a couple of seconds after the player stops steering it.
-
+// Third-person follow camera. The mouse turns it; it trails the player (or
+// the car) on a stiff spring so it never lags far behind, and it pulls in
+// when a wall would block the view.
 import * as THREE from 'three';
-import { angleTo, clamp, damp } from './utils.js';
+import { clamp, dampFactor, angleDelta } from './rng.js';
+import { rayVsBox } from './combat.js';
 
-const FOOT_DISTANCE = 6.5;
-const CAR_DISTANCE = 9.0;
-const DEFAULT_PITCH = 0.32;
+export class FollowCamera {
+  constructor(camera, city) {
+    this.camera = camera;
+    this.city = city;
+    this.yaw = 0;
+    this.pitch = 0.32;
+    this.distance = 9;
+    this.target = new THREE.Vector3();
+    this.position = new THREE.Vector3(0, 6, -12);
+  }
 
-export function createCamera(camera) {
-  const state = {
-    yaw: Math.PI,
-    pitch: DEFAULT_PITCH,
-    distance: FOOT_DISTANCE,
-    idleTimer: 0,
-    pos: new THREE.Vector3(0, 5, -10),
-    look: new THREE.Vector3(),
-  };
+  addMouse(dx, dy) {
+    this.yaw -= dx * 0.0026;
+    this.pitch = clamp(this.pitch + dy * 0.0022, -0.15, 0.85);
+  }
 
-  return {
-    state,
-    setYaw(yaw) {
-      state.yaw = yaw;
-    },
-    /** Mouse orbit: dx turns, dy tilts. */
-    orbit(dx, dy) {
-      state.yaw -= dx * 0.0024;
-      state.pitch = clamp(state.pitch - dy * 0.0022, 0.06, 1.05);
-      state.idleTimer = 0;
-    },
-    /**
-     * Follows `target` (a {x, z} plus eye height). When driving, the camera
-     * auto-aligns behind the vehicle after a short idle; on foot it stays put.
-     */
-    update(dt, target, heading, inCar) {
-      state.idleTimer += dt;
-      if (inCar && state.idleTimer > 2.5) {
-        state.yaw += angleTo(state.yaw, heading) * Math.min(1, dt * 1.4);
-        state.pitch = damp(state.pitch, DEFAULT_PITCH, 2, dt);
-      }
-      const dist = inCar ? CAR_DISTANCE : FOOT_DISTANCE;
-      state.distance = damp(state.distance, dist, 4, dt);
-      const eyeY = inCar ? 1.6 : 1.5;
-      const tx = target.x;
-      const ty = eyeY;
-      const tz = target.z;
-      const back = state.distance * Math.cos(state.pitch);
-      const wantX = tx - Math.sin(state.yaw) * back;
-      const wantY = ty + state.distance * Math.sin(state.pitch);
-      const wantZ = tz - Math.cos(state.yaw) * back;
-      const rate = 9;
-      state.pos.x = damp(state.pos.x, wantX, rate, dt);
-      state.pos.y = damp(state.pos.y, Math.max(wantY, 1.2), rate, dt);
-      state.pos.z = damp(state.pos.z, wantZ, rate, dt);
-      state.look.set(tx, ty, tz);
-      camera.position.copy(state.pos);
-      camera.lookAt(state.look);
-    },
-    /** The direction the camera looks, as a heading (for camera-relative movement). */
-    lookHeading() {
-      return state.yaw;
-    },
-    /** Snaps the camera behind the target at once (respawns, shot staging). */
-    snap(target, heading, inCar) {
-      state.yaw = heading;
-      state.pitch = DEFAULT_PITCH;
-      const dist = inCar ? CAR_DISTANCE : FOOT_DISTANCE;
-      const eyeY = inCar ? 1.6 : 1.5;
-      state.pos.set(
-        target.x - Math.sin(heading) * dist,
-        eyeY + dist * Math.sin(DEFAULT_PITCH),
-        target.z - Math.cos(heading) * dist,
-      );
-      state.distance = dist;
-      camera.position.copy(state.pos);
-      camera.lookAt(target.x, eyeY, target.z);
-    },
-  };
+  // Follow a moving focus (player or car). inCar widens the shot.
+  update(dt, focus, heading, inCar, speed) {
+    const dist = inCar ? 10.5 + Math.min(2.5, Math.abs(speed) * 0.06) : 9;
+    // Behind a car, the camera swings toward the car's heading.
+    if (inCar && Math.abs(speed) > 3) {
+      const want = heading + Math.PI;
+      this.yaw += angleDelta(this.yaw, want) * dampFactor(2.2, dt);
+    }
+    const cx = focus.x + Math.sin(this.yaw) * Math.cos(this.pitch) * dist;
+    const cz = focus.z + Math.cos(this.yaw) * Math.cos(this.pitch) * dist;
+    const cy = focus.y + 2.2 + Math.sin(this.pitch) * dist;
+    // Pull in when a building blocks the line from the focus to the camera.
+    let d = dist;
+    const dir = { x: cx - focus.x, y: cy - focus.y, z: cz - focus.z };
+    const len = Math.hypot(dir.x, dir.y, dir.z) || 1;
+    dir.x /= len;
+    dir.y /= len;
+    dir.z /= len;
+    for (const box of this.city.solids) {
+      const hit = rayVsBox(focus.x, focus.y, focus.z, dir.x, dir.y, dir.z, box);
+      if (hit < d) d = Math.max(2.5, hit - 0.6);
+    }
+    const px = focus.x + dir.x * d;
+    const py = Math.max(1.4, focus.y + dir.y * d);
+    const pz = focus.z + dir.z * d;
+    const k = dampFactor(11, dt);
+    this.position.x += (px - this.position.x) * k;
+    this.position.y += (py - this.position.y) * k;
+    this.position.z += (pz - this.position.z) * k;
+    this.camera.position.copy(this.position);
+    this.target.set(focus.x, focus.y + 1.6, focus.z);
+    this.camera.lookAt(this.target);
+  }
+
+  // Slow orbit for the title screen's attract mode.
+  orbit(dt, time) {
+    const a = time * 0.05;
+    const r = 130;
+    this.camera.position.set(Math.sin(a) * r, 62, Math.cos(a) * r);
+    this.camera.lookAt(0, 0, 20);
+  }
 }
