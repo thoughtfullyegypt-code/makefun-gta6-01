@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOLMAR — Sun, Surf &amp; Trouble</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e14; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; display: none; color: #fff; }
+  #minimap-wrap { position: absolute; top: 16px; left: 16px; border: 3px solid rgba(255,255,255,0.85); border-radius: 50%; overflow: hidden; width: 190px; height: 190px; box-shadow: 0 4px 18px rgba(0,0,0,0.5); background: #12303f; }
+  #minimap { display: block; width: 190px; height: 190px; }
+  #money { position: absolute; top: 216px; left: 22px; font-size: 26px; font-weight: 800; letter-spacing: 1px; color: #7ee787; text-shadow: 2px 2px 0 #000, 0 0 12px rgba(0,0,0,0.8); }
+  #stars { position: absolute; top: 18px; right: 22px; font-size: 30px; letter-spacing: 4px; color: rgba(255,255,255,0.35); text-shadow: 2px 2px 0 #000; }
+  #stars.hot { color: #ffd23f; }
+  #evade { position: absolute; top: 58px; right: 22px; display: none; font-size: 13px; font-weight: 700; letter-spacing: 2px; color: #ffd23f; text-shadow: 1px 1px 0 #000; }
+  #health-bar { position: absolute; top: 84px; right: 22px; width: 170px; height: 12px; background: rgba(0,0,0,0.55); border: 2px solid rgba(255,255,255,0.7); border-radius: 3px; overflow: hidden; }
+  #health-fill { height: 100%; width: 100%; }
+  #health-fill.good { background: #3ddc5f; } #health-fill.ok { background: #ffb020; } #health-fill.bad { background: #e8362d; }
+  #objective { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); max-width: 52%; text-align: center; font-size: 17px; font-weight: 700; background: rgba(0,0,0,0.55); border-radius: 6px; padding: 8px 16px; text-shadow: 1px 1px 0 #000; }
+  #speed { position: absolute; bottom: 22px; right: 24px; font-size: 30px; font-weight: 800; text-shadow: 2px 2px 0 #000; display: none; }
+  #prompt { position: absolute; bottom: 22px; left: 24px; font-size: 16px; font-weight: 700; background: rgba(0,0,0,0.55); border-radius: 6px; padding: 8px 14px; display: none; }
+  #crosshair { position: absolute; top: 50%; left: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; display: none; }
+  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #fff; box-shadow: 0 0 3px #000; }
+  #crosshair::before { left: 8px; top: 0; width: 2px; height: 18px; }
+  #crosshair::after { top: 8px; left: 0; width: 18px; height: 2px; }
+  #damage-flash { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200,0,0,0.8) 100%); opacity: 0; }
+  #banner { position: absolute; top: 34%; left: 0; right: 0; text-align: center; opacity: 0; transition: opacity 0.3s; }
+  #banner.show { opacity: 1; }
+  #banner-title { font-size: 54px; font-weight: 900; letter-spacing: 4px; text-shadow: 3px 3px 0 #000, 0 0 24px rgba(0,0,0,0.7); }
+  #banner-sub { font-size: 19px; font-weight: 600; margin-top: 6px; text-shadow: 2px 2px 0 #000; padding: 0 12%; }
+
+  /* ---------- Overlays ---------- */
+  .overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; color: #fff; text-align: center; z-index: 10; }
+  #title-screen { background: linear-gradient(180deg, rgba(10,20,40,0.55) 0%, rgba(10,20,40,0.82) 100%); display: flex; }
+  #title-screen h1 { font-size: 92px; margin: 0; letter-spacing: 14px; font-weight: 900; color: #ffd23f; text-shadow: 4px 4px 0 #c0392b, 8px 8px 24px rgba(0,0,0,0.8); }
+  #title-screen .tagline { font-size: 22px; letter-spacing: 6px; margin: 4px 0 18px; color: #fff; text-shadow: 2px 2px 0 #000; }
+  #title-screen .story { max-width: 620px; font-size: 16px; line-height: 1.55; background: rgba(0,0,0,0.45); padding: 14px 20px; border-radius: 8px; }
+  .btn { pointer-events: auto; cursor: pointer; font-size: 19px; font-weight: 800; letter-spacing: 1px; color: #111; background: #ffd23f; border: none; border-radius: 6px; padding: 13px 34px; margin: 8px; box-shadow: 0 4px 0 #b89a1e, 0 6px 18px rgba(0,0,0,0.5); }
+  .btn:hover { background: #ffe066; }
+  .btn.secondary { background: rgba(255,255,255,0.9); box-shadow: 0 4px 0 #888, 0 6px 18px rgba(0,0,0,0.5); }
+  .controls { margin-top: 16px; font-size: 14px; line-height: 1.9; color: #ddd; text-shadow: 1px 1px 0 #000; }
+  .controls b { color: #ffd23f; }
+  #pause-screen, #end-screen { background: rgba(8,12,20,0.72); }
+  #pause-screen h2, #end-screen h2 { font-size: 52px; letter-spacing: 6px; margin: 0 0 10px; }
+  #end-title { color: #e8362d; }
+  #end-sub { font-size: 19px; margin-bottom: 18px; }
+  .fine { margin-top: 18px; font-size: 12px; color: #bbb; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="game" aria-label="Solmar: an open-world crime game. Drive, explore the city, and run jobs for Ray."></canvas>
+<p id="status" role="status" aria-live="polite"></p>
+
+<div id="hud">
+  <div id="damage-flash"></div>
+  <div id="minimap-wrap"><canvas id="minimap" width="190" height="190"></canvas></div>
+  <div id="money">$0</div>
+  <div id="stars">☆☆☆☆☆</div>
+  <div id="evade">EVADING…</div>
+  <div id="health-bar"><div id="health-fill" class="good"></div></div>
+  <div id="objective"></div>
+  <div id="speed"></div>
+  <div id="prompt"></div>
+  <div id="crosshair"></div>
+  <div id="banner"><div id="banner-title"></div><div id="banner-sub"></div></div>
+</div>
+
+<div id="title-screen" class="overlay">
+  <h1>SOLMAR</h1>
+  <div class="tagline">SUN &nbsp;·&nbsp; SURF &nbsp;·&nbsp; TROUBLE</div>
+  <div class="story">You are Marco &ldquo;Mars&rdquo; Delgado, a wheelman who owes the wrong people money in the sunniest city on the coast. Steal cars, lose the cops, run jobs for Ray — and take Solmar back, one job at a time.</div>
+  <div>
+    <button id="new-btn" class="btn">NEW GAME</button>
+    <button id="continue-btn" class="btn secondary" style="display:none">CONTINUE</button>
+  </div>
+  <div class="controls">
+    <b>W A S D</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> look &nbsp;·&nbsp; <b>E</b> get in / out of a car &nbsp;·&nbsp; <b>Shift</b> sprint<br>
+    <b>Space</b> handbrake &nbsp;·&nbsp; <b>Click</b> shoot (on foot) &nbsp;·&nbsp; <b>H</b> horn &nbsp;·&nbsp; <b>Esc</b> pause
+  </div>
+  <div class="fine">An original game: its city, characters, story and art are all its own.</div>
+</div>
+
+<div id="pause-screen" class="overlay">
+  <h2>PAUSED</h2>
+  <div>
+    <button id="resume-btn" class="btn">RESUME</button>
+    <button id="mission-btn" class="btn">START NEXT JOB</button>
+  </div>
+  <div>
+    <button id="save-btn" class="btn secondary">SAVE GAME</button>
+    <button id="mute-btn" class="btn secondary">Sound: On</button>
+    <button id="quit-btn" class="btn secondary">QUIT TO TITLE</button>
+  </div>
+  <div class="controls"><b>W A S D</b> move / drive &nbsp;·&nbsp; <b>E</b> enter car &nbsp;·&nbsp; <b>Click</b> shoot &nbsp;·&nbsp; <b>Space</b> handbrake &nbsp;·&nbsp; <b>H</b> horn</div>
+</div>
+
+<div id="end-screen" class="overlay">
+  <h2 id="end-title">BUSTED</h2>
+  <div id="end-sub"></div>
+  <div class="controls">Press <b>Enter</b> to continue</div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
